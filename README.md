@@ -92,10 +92,11 @@ Some applications do not provide a method to select a different GPU. In that cas
 **Note:** If the device filter is configured incorrectly, it may filter out all devices and applications will be unable to create a D3D device.
 
 ### State cache
-DXVK caches pipeline state by default, so that shaders can be recompiled ahead of time on subsequent runs of an application, even if the driver's own shader cache got invalidated in the meantime. This cache is enabled by default, and generally reduces stuttering.
+This cache is disabled by default. It aims to reduce stuttering. The same can be said about async pipeline which is enabled by default. It is not recommended to enable both options at the same time.
 
 The following environment variables can be used to control the cache:
-- `DXVK_STATE_CACHE=0` Disables the state cache.
+- `DXVK_STATE_CACHE=1` Enables the state cache.
+- `DXVK_ASYNC=0` Disables async shader compilation.
 - `DXVK_STATE_CACHE_PATH=/some/directory` Specifies a directory where to put the cache files. Defaults to the current working directory of the application.
 
 ### Debugging
