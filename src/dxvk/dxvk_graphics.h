@@ -132,18 +132,24 @@ namespace dxvk {
    * Stores a state vector and the
    * corresponding pipeline handle.
    */
-  class DxvkGraphicsPipelineInstance {
-
+  class DxvkGraphicsPipelineInstance: public RcObject {
+    friend class DxvkGraphicsPipeline;
   public:
 
     DxvkGraphicsPipelineInstance() { }
     DxvkGraphicsPipelineInstance(
+      const Rc<vk::DeviceFn>&               vkd,
       const DxvkGraphicsPipelineStateInfo&  state,
             VkRenderPass                    rp,
             VkPipeline                      pipe)
-    : m_stateVector (state),
+    : m_vkd         (vkd),
+      m_stateVector (state),
       m_renderPass  (rp),
       m_pipeline    (pipe) { }
+
+    ~DxvkGraphicsPipelineInstance() {
+      m_vkd->vkDestroyPipeline(m_vkd->device(), m_pipeline, nullptr);
+    }
 
     /**
      * \brief Checks for matching pipeline state
@@ -160,22 +166,37 @@ namespace dxvk {
     }
 
     /**
+     * \brief Sets the pipeline handle
+     *
+     * If a pipeline handle has already been
+     * set up, this method will fail and the new pipeline
+     * handle should be destroyed.
+     * \param [in] pipeline The pipeline
+     */
+    bool setPipeline(VkPipeline pipeline) {
+      VkPipeline expected = VK_NULL_HANDLE;
+      return m_pipeline.compare_exchange_strong(expected, pipeline);
+    }
+
+    /**
      * \brief Retrieves pipeline
      * \returns The pipeline handle
      */
     VkPipeline pipeline() const {
-      return m_pipeline;
+      return m_pipeline.load();
     }
 
   private:
 
+    const Rc<vk::DeviceFn>        m_vkd;
     DxvkGraphicsPipelineStateInfo m_stateVector;
     VkRenderPass                  m_renderPass;
-    VkPipeline                    m_pipeline;
+    std::atomic<VkPipeline>       m_pipeline;
 
   };
 
   
+
   /**
    * \brief Graphics pipeline
    * 
@@ -234,19 +255,19 @@ namespace dxvk {
      * state. If necessary, a new pipeline will be created.
      * \param [in] state Pipeline state vector
      * \param [in] renderPass The render pass
+     * \param [in] async Compile asynchronously
      * \returns Pipeline handle
      */
     VkPipeline getPipelineHandle(
       const DxvkGraphicsPipelineStateInfo&    state,
-      const DxvkRenderPass&                   renderPass);
+      const Rc<DxvkRenderPass>&               renderPass,
+            bool                              async);
+    
+    VkPipeline compileInstance(
+      const Rc<DxvkGraphicsPipelineInstance>& instance,
+      const Rc<DxvkRenderPass>&               renderPass);
     
   private:
-    
-    struct PipelineStruct {
-      DxvkGraphicsPipelineStateInfo stateVector;
-      VkRenderPass                  renderPass;
-      VkPipeline                    pipeline;
-    };
     
     Rc<vk::DeviceFn>          m_vkd;
     DxvkPipelineManager*      m_pipeMgr;
@@ -267,13 +288,13 @@ namespace dxvk {
     DxvkGraphicsCommonPipelineStateInfo m_common;
     
     // List of pipeline instances, shared between threads
-    alignas(CACHE_LINE_SIZE) sync::Spinlock   m_mutex;
-    std::vector<DxvkGraphicsPipelineInstance> m_pipelines;
+    alignas(CACHE_LINE_SIZE) sync::Spinlock       m_mutex;
+    std::vector<Rc<DxvkGraphicsPipelineInstance>> m_pipelines;
     
     // Pipeline handles used for derivative pipelines
     VkPipeline m_basePipeline = VK_NULL_HANDLE;
     
-    const DxvkGraphicsPipelineInstance* findInstance(
+    DxvkGraphicsPipelineInstance* findInstance(
       const DxvkGraphicsPipelineStateInfo& state,
             VkRenderPass                   renderPass) const;
     
